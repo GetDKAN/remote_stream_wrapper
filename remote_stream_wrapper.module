@@ -11,12 +11,16 @@
  * Implements hook_permission().
  */
 function remote_stream_wrapper_permission() {
-  return array(
-    'add media from remote urls' => array(
+  $permission = array();
+
+  if (module_exists('media')) {
+    $permission['add media from remote urls'] = array(
       'title' => t('Add media from remote URLs'),
       'description' => t('Add media from remote URLs.'),
-    ),
-  );
+    );
+  }
+
+  return $permission;
 }
 
 /**
