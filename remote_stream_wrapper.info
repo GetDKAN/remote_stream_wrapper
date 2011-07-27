@@ -1,0 +1,6 @@
+name = Remote stream wrapper
+description = Provides the ability to use external files with filefields without saving the files to your local files directory.
+core = 7.x
+files[] = remote_stream_wrapper.inc
+suggests[] = file
+suggests[] = media

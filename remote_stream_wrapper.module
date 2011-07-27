@@ -1,0 +1,202 @@
+<?php
+
+/**
+ * @file
+ * Provides a remote stream wrapper and file field integration.
+ *
+ * @todo Add a 'Remote URL' file field widget.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function remote_stream_wrapper_permission() {
+  return array(
+    'add media from remote urls' => array(
+      'title' => t('Add media from remote URLs'),
+      'description' => t('Add media from remote URLs.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_stream_wrappers().
+ */
+function remote_stream_wrapper_stream_wrappers() {
+  $info['http'] = array(
+    'name' => t('HTTP URLs'),
+    'class' => 'DrupalRemoteStreamWrapper',
+    'description' => t('Remote files.'),
+    'type' => STREAM_WRAPPERS_READ_VISIBLE,
+  );
+  $info['https'] = $info['http'];
+
+  return $info;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Manually add support for the remote stream wrapper in file fields since
+ * it is read-only.
+ */
+function remote_stream_wrapper_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
+  /*if ($form['#field']['type'] == 'file') {
+    $form['field']['settings']['uri_scheme']['#options']['remote'] = t('Remote files');
+    $form['instance']['settings']['file_directory']['#states'] = array(
+      'invisible' => array(
+        ':input[name="field[settings][uri_scheme]"]' => array('value' => 'remote'),
+      ),
+    );
+    $form['instance']['settings']['max_filesize']['#states'] = array(
+      'invisible' => array(
+        ':input[name="field[settings][uri_scheme]"]' => array('value' => 'remote'),
+      ),
+    );
+  }*/
+}
+
+/**
+ * Implements hook_media_browser_plugin_info().
+ */
+function remote_stream_wrapper_media_browser_plugin_info() {
+  $plugins = array();
+  // This depends on media_internet being enabled.
+  if (user_access('administer media') || user_access('add media from remote urls')) {
+    $plugins['remote_file'] = array(
+      '#title' => t('Remote URL'),
+      '#weight' => -10,
+    );
+  }
+  return $plugins;
+}
+
+/**
+ * Implements hook_media_browser_plugin_view().
+ */
+function remote_stream_wrapper_media_browser_plugin_view($plugin_name, $params) {
+  $path = drupal_get_path('module', 'media');
+
+  $types = isset($params['types']) ? $params['types'] : array();
+  $multiselect = isset($params['multiselect']) ? $params['multiselect'] : FALSE;
+
+  $redirect = array('media/browser', array('query' => array('render' => 'media-popup')));
+  switch ($plugin_name) {
+    case 'remote_file':
+      // @todo: implement the multiselect argument here.
+      $from_web_form = drupal_get_form('remote_stream_wrapper_media_browser_form', $types, $multiselect);
+      return array(
+        '#title' => t('Remote URL'),
+        'form' => array($from_web_form),
+      );
+      break;
+  }
+
+  return array();
+}
+
+/**
+ * Provides a form for adding media items from remote URLs.
+ *
+ * @see remote_stream_wrapper_media_browser_form_submit()
+ */
+function remote_stream_wrapper_media_browser_form($form, &$form_state = array(), $types = NULL) {
+  $form['url'] = array(
+    '#type' => 'textfield',
+    '#title' => 'URL',
+    '#attributes' => array('class' => array('media-add-from-remote-url')),
+    // There is no standard specifying a maximum length for a URL. Internet
+    // Explorer supports upto 2083 (http://support.microsoft.com/kb/208427), so
+    // we assume publicly available media URLs are within this limit.
+    '#maxlength' => 2083,
+    '#element_validate' => array('remote_stream_wrapper_validate_url'),
+    '#required' => TRUE,
+  );
+
+  // @todo Validate against file field allowed types.
+  $form['#validators'] = array();
+  if ($types) {
+    //$form['#validators']['media_file_validate_types'] = array($types);
+  }
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+  return $form;
+}
+
+/**
+ * Validation callback for remote URLs.
+ */
+function remote_stream_wrapper_validate_url($element, &$form_state) {
+  $value = $element['#value'];
+  if ($value != '' && !valid_url($value, TRUE)) {
+    form_error($element, t('Invalid URL %url.', array('%url' => $value)));
+  }
+}
+
+/**
+ * Load a file object by URI.
+ *
+ * @param string $uri
+ *   A string containing the URI, path, or filename.
+ *
+ * @return
+ *   A file object, or FALSE if not found.
+ */
+function remote_stream_wrapper_file_load_by_uri($uri, $create_new = FALSE) {
+  $uri = file_stream_wrapper_uri_normalize($uri);
+  $files = entity_load('file', FALSE, array('uri' => $uri));
+  return !empty($files) ? reset($files) : FALSE;
+}
+
+/**
+ * Helper functon to assemble a new file entity object by URI.
+ *
+ * @param string $uri
+ *   A string containing the URI, path, or filename.
+ */
+function remote_stream_wrapper_file_create_by_uri($uri) {
+  $uri = file_stream_wrapper_uri_normalize($uri);
+
+  $file = new stdClass();
+  $file->fid = NULL;
+  $file->uri = $uri;
+  $file->filename = basename($file->uri);
+  $file->filemime = file_get_mimetype($file->uri);
+  $file->uid = $GLOBALS['user']->uid;
+  $file->status = FILE_STATUS_PERMANENT;
+  file_save($file);
+  return $file;
+}
+
+/**
+ * Save a file record based on a remote URL.
+ *
+ * @see remote_stream_wrapper_media_browser_form()
+ * @see file_save()
+ * @see DrupalRemoteStreamWrapper
+ */
+function remote_stream_wrapper_media_browser_form_submit($form, &$form_state) {
+  $uri = $url = $form_state['values']['url'];
+
+  try {
+    $file = remote_stream_wrapper_file_load_by_uri($uri);
+    if (!$file) {
+      $file = remote_stream_wrapper_file_create_by_uri($uri);
+    }
+  }
+  catch (Exception $e) {
+    form_set_error('url', $e->getMessage());
+    return;
+  }
+
+  if (empty($file->fid)) {
+    form_set_error('url', t('Unable to add file from URL %file.', array('%file' => $url)));
+    return;
+  }
+
+  $form_state['redirect'] = array('media/browser', array('query' => array('render' => 'media-popup', 'fid' => $file->fid)));
+}
