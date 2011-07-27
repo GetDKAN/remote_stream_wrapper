@@ -61,6 +61,62 @@ function remote_stream_wrapper_form_field_ui_field_edit_form_alter(&$form, &$for
 }
 
 /**
+ * Validation callback for remote URLs.
+ */
+function remote_stream_wrapper_validate_url($element, &$form_state) {
+  $value = $element['#value'];
+  if ($value != '' && !valid_url($value, TRUE)) {
+    form_error($element, t('Invalid URL %url.', array('%url' => $value)));
+  }
+  elseif (!file_stream_wrapper_valid_scheme(file_uri_scheme($value))) {
+    // Check that the scheme is supported.
+    form_error($element, t('Remote URLs with the %scheme scheme are not supported.', array('%scheme' => $scheme)));
+  }
+  else {
+    // Check that the file exists.
+    $request = drupal_http_request($value, array('method' => 'HEAD'));
+    if (!empty($request->error)) {
+      form_error($element, t('Unable to fetch file from URL %url (error @code: %error).', array('%url' => $value, '@code' => $request->code, '%error' => $request->error)));
+    }
+  }
+}
+
+/**
+ * Load a file object by URI.
+ *
+ * @param string $uri
+ *   A string containing the URI, path, or filename.
+ *
+ * @return
+ *   A file object, or FALSE if not found.
+ */
+function remote_stream_wrapper_file_load_by_uri($uri, $create_new = FALSE) {
+  $uri = file_stream_wrapper_uri_normalize($uri);
+  $files = entity_load('file', FALSE, array('uri' => $uri));
+  return !empty($files) ? reset($files) : FALSE;
+}
+
+/**
+ * Helper functon to assemble a new file entity object by URI.
+ *
+ * @param string $uri
+ *   A string containing the URI, path, or filename.
+ */
+function remote_stream_wrapper_file_create_by_uri($uri) {
+  $uri = file_stream_wrapper_uri_normalize($uri);
+
+  $file = new stdClass();
+  $file->fid = NULL;
+  $file->uri = $uri;
+  $file->filename = basename($file->uri);
+  $file->filemime = file_get_mimetype($file->uri);
+  $file->uid = $GLOBALS['user']->uid;
+  $file->status = FILE_STATUS_PERMANENT;
+  file_save($file);
+  return $file;
+}
+
+/**
  * Implements hook_media_browser_plugin_info().
  */
 function remote_stream_wrapper_media_browser_plugin_info() {
@@ -129,51 +185,6 @@ function remote_stream_wrapper_media_browser_form($form, &$form_state = array(),
     '#value' => t('Submit'),
   );
   return $form;
-}
-
-/**
- * Validation callback for remote URLs.
- */
-function remote_stream_wrapper_validate_url($element, &$form_state) {
-  $value = $element['#value'];
-  if ($value != '' && !valid_url($value, TRUE)) {
-    form_error($element, t('Invalid URL %url.', array('%url' => $value)));
-  }
-}
-
-/**
- * Load a file object by URI.
- *
- * @param string $uri
- *   A string containing the URI, path, or filename.
- *
- * @return
- *   A file object, or FALSE if not found.
- */
-function remote_stream_wrapper_file_load_by_uri($uri, $create_new = FALSE) {
-  $uri = file_stream_wrapper_uri_normalize($uri);
-  $files = entity_load('file', FALSE, array('uri' => $uri));
-  return !empty($files) ? reset($files) : FALSE;
-}
-
-/**
- * Helper functon to assemble a new file entity object by URI.
- *
- * @param string $uri
- *   A string containing the URI, path, or filename.
- */
-function remote_stream_wrapper_file_create_by_uri($uri) {
-  $uri = file_stream_wrapper_uri_normalize($uri);
-
-  $file = new stdClass();
-  $file->fid = NULL;
-  $file->uri = $uri;
-  $file->filename = basename($file->uri);
-  $file->filemime = file_get_mimetype($file->uri);
-  $file->uid = $GLOBALS['user']->uid;
-  $file->status = FILE_STATUS_PERMANENT;
-  file_save($file);
-  return $file;
 }
 
 /**
