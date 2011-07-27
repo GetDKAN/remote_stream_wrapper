@@ -34,6 +34,7 @@ function remote_stream_wrapper_stream_wrappers() {
     'type' => STREAM_WRAPPERS_READ_VISIBLE,
   );
   $info['https'] = $info['http'];
+  $info['feed'] = $info['http'];
 
   return $info;
 }
