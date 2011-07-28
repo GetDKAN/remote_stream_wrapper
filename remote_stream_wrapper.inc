@@ -83,14 +83,14 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * Base implementation of chmod().
    */
   function chmod($mode) {
-    return FALSE;
+    return TRUE;
   }
 
   /**
    * Base implementation of realpath().
    */
   function realpath() {
-    return FALSE;
+    return $this->getLocalPath();
   }
 
   /**
@@ -237,13 +237,24 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-stat.php
    */
   public function stream_stat() {
+    $stat = array();
     $request = drupal_http_request($this->uri, array('method' => 'HEAD'));
     if (empty($request->error)) {
-      $stat['size'] = $request->headers['content-length'];
-      return $this->getStat($stat);
+      if (isset($request->headers['content-length'])) {
+        $stat['size'] = $request->headers['content-length'];
+      }
+      else {
+        // If the HEAD request does not return a Content-Length header, fall
+        // back to performing a full request of the file to determine its file
+        // size.
+        $request = drupal_http_request($this->uri);
+        if (empty($request->error) && !empty($request->data)) {
+          $stat['size'] = strlen($request->data);
+        }
+      }
     }
 
-    return FALSE;
+    return !empty($stat) ? $this->getStat($stat) : FALSE;
   }
 
   /**
@@ -269,7 +280,9 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.unlink.php
    */
   public function unlink($uri) {
-    return FALSE;
+    // We return FALSE rather than TRUE so that managed file records can be
+    // deleted.
+    return TRUE;
   }
 
   /**
@@ -358,10 +371,12 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.dir-opendir.php
    */
   public function dir_opendir($uri, $options) {
+    return FALSE;
+
     $this->uri = $uri;
     $this->handle = opendir($this->getLocalPath());
 
-    return (bool)$this->handle;
+    return (bool) $this->handle;
   }
 
   /**
@@ -450,9 +465,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
     if (!isset($uri)) {
       $uri = $this->uri;
     }
-
-    $path = trim($path, '/');
-    return $path;
+    return $uri;
   }
 
   /**
@@ -462,7 +475,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
     $defaults = array(
       'dev' => 0,      // device number
       'ino' => 0,      // inode number
-      'mode' => 0,     // inode protectio
+      'mode' => 0100000 | 0444,     // inode protectio
       'nlink' => 0,    // number of links
       'uid' => 0,      // userid of owner
       'gid' => 0,      // groupid of owner

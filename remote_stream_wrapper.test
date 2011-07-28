@@ -1,0 +1,65 @@
+<?php
+
+/**
+ * Tests for the remote_stream_wrapper module.
+ */
+
+class RemoteStreamWrapperTestCase extends DrupalWebTestCase {
+  public static function getInfo() {
+    return array(
+      'name' => 'Remote stream wrapper',
+      'description' => 'Tests functionality for remote stream wrappers.',
+      'group' => 'Remote steam wrapper',
+    );
+  }
+
+  function setUp() {
+    parent::setUp(array('remote_stream_wrapper'));
+  }
+
+  /**
+   * Override DrupalWebTestCase::drupalGetTestFiles to return 'external' files.
+   */
+  protected function drupalGetTestFiles($type, $size = NULL) {
+    $files = parent::drupalGetTestFiles($type, $size);
+    foreach ($files as $file) {
+      $file->original_uri = $file->uri;
+      $file->uri = file_create_url($file->uri);
+    }
+    return $files;
+  }
+
+  /**
+   * Test file CRUD functions with remote files.
+   */
+  function testFileCrud() {
+    $files = $this->drupalGetTestFiles('image');
+
+    $file = remote_stream_wrapper_file_load_by_uri($files[0]->uri);
+    $this->assertFalse($file, 'Remote file not yet saved as a managed file.');
+    $file = remote_stream_wrapper_file_create_by_uri($files[0]->uri);
+    $this->assertTrue(!empty($file->fid), 'Remote file saved successfully.');
+    $this->assertEqual($file->filesize, filesize($files[0]->original_uri));
+    $this->assertEqual($file->filemime, file_get_mimetype($files[0]->original_uri));
+
+    $loaded_file = remote_stream_wrapper_file_load_by_uri($files[0]->uri);
+    $this->assertEqual($loaded_file->fid, $file->fid, 'Remote file managed record loaded by URI.');
+
+    // Delete the managed file record.
+    $result = file_delete($file);
+    $this->assertIdentical($result, TRUE, 'Remote file record deleted successfully.');
+    $this->assertFalse(remote_stream_wrapper_file_load_by_uri($files[0]->uri), 'Remote file managed record no longer exists.');
+  }
+
+  /**
+   * Check that basic-level file functions return expected values.
+   */
+  function testFileStat() {
+    $files = $this->drupalGetTestFiles('image');
+    $file = $files[0];
+
+    $this->assertTrue(is_file($file->uri));
+    $this->assertFalse(is_dir($file->uri));
+    $this->assertEqual(filesize($file->uri), 125);
+  }
+}

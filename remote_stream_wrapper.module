@@ -91,7 +91,7 @@ function remote_stream_wrapper_validate_url($element, &$form_state) {
  * @return
  *   A file object, or FALSE if not found.
  */
-function remote_stream_wrapper_file_load_by_uri($uri, $create_new = FALSE) {
+function remote_stream_wrapper_file_load_by_uri($uri) {
   $uri = file_stream_wrapper_uri_normalize($uri);
   $files = entity_load('file', FALSE, array('uri' => $uri));
   return !empty($files) ? reset($files) : FALSE;
