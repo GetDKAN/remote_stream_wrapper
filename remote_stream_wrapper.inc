@@ -16,7 +16,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    *
    * @var Resource
    */
-  public $handle = NULL;
+  //public $handle = NULL;
 
   /**
    * Instance URI (stream).
@@ -26,6 +26,22 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @var String
    */
   protected $uri;
+
+  /**
+   * The content of the file.
+   *
+   * @var String
+   */
+  protected $stream_content = NULL;
+
+
+  /**
+   * The pointer to the next read or write within the content variable.
+   *
+   * @var Integer
+   */
+  protected $stream_pointer;
+
 
   /**
    * Base implementation of setUri().
@@ -80,14 +96,16 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
   }
 
   /**
-   * Base implementation of chmod().
+   * Implements chmod().
+   *
+   * Returns a TRUE result since this is a read-only stream wrapper.
    */
   function chmod($mode) {
     return TRUE;
   }
 
   /**
-   * Base implementation of realpath().
+   * Implements realpath().
    */
   function realpath() {
     return $this->getLocalPath();
@@ -110,22 +128,21 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-open.php
    */
   public function stream_open($uri, $mode, $options, &$opened_path) {
+    $this->uri = $uri;
+
     $allowed_modes = array('r', 'rb');
     if (!in_array($mode, $allowed_modes)) {
       return FALSE;
     }
 
-    $this->uri = $uri;
-    $url = $this->getExternalUrl();
-
-    if ($options & STREAM_REPORT_ERRORS) {
-      $this->handle = fopen($url, $mode);
-    }
-    else {
-      $this->handle = @fopen($url, $mode);
+    // Attempt to fetch the URL's data using drupal_http_request().
+    if (!$this->getStreamContent()) {
+      return FALSE;
     }
 
-    return (bool) $this->handle;
+    // Reset the stream pointer since this is an open.
+    $this->stream_pointer = 0;
+    return TRUE;
   }
 
   /**
@@ -144,7 +161,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-lock.php
    */
   public function stream_lock($operation) {
-    return FALSE;
+    return TRUE;
   }
 
   /**
@@ -158,7 +175,16 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-read.php
    */
   public function stream_read($count) {
-    return fread($this->handle, $count);
+    if (is_string($this->stream_content)) {
+      $remaining_chars = strlen($this->stream_content) - $this->stream_pointer;
+      $number_to_read = min($count, $remaining_chars);
+      if ($remaining_chars > 0) {
+        $buffer = substr($this->stream_content, $this->stream_pointer, $number_to_read);
+        $this->stream_pointer += $number_to_read;
+        return $buffer;
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -184,7 +210,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-eof.php
    */
   public function stream_eof() {
-    return feof($this->handle);
+    return $this->stream_pointer == strlen($this->stream_content);
   }
 
   /**
@@ -200,7 +226,11 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-seek.php
    */
   public function stream_seek($offset, $whence) {
-    return fseek($this->handle, $offset, $whence);
+    if (strlen($this->stream_content) >= $offset) {
+      $this->stream_pointer = $offset;
+      return TRUE;
+    }
+    return FALSE;
   }
 
   /**
@@ -212,7 +242,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-flush.php
    */
   public function stream_flush() {
-    return fflush($this->handle);
+    return TRUE;
   }
 
   /**
@@ -224,7 +254,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-tell.php
    */
   public function stream_tell() {
-    return ftell($this->handle);
+    return $this->stream_pointer;
   }
 
   /**
@@ -243,14 +273,11 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
       if (isset($request->headers['content-length'])) {
         $stat['size'] = $request->headers['content-length'];
       }
-      else {
+      elseif ($size = strlen($this->getStreamContent())) {
         // If the HEAD request does not return a Content-Length header, fall
         // back to performing a full request of the file to determine its file
         // size.
-        $request = drupal_http_request($this->uri);
-        if (empty($request->error) && !empty($request->data)) {
-          $stat['size'] = strlen($request->data);
-        }
+        $stat['size'] = $size;
       }
     }
 
@@ -266,7 +293,9 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    * @see http://php.net/manual/en/streamwrapper.stream-close.php
    */
   public function stream_close() {
-    return fclose($this->handle);
+    $this->stream_pointer = 0;
+    $this->stream_content = NULL;
+    return TRUE;
   }
 
   /**
@@ -372,11 +401,6 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    */
   public function dir_opendir($uri, $options) {
     return FALSE;
-
-    $this->uri = $uri;
-    $this->handle = opendir($this->getLocalPath());
-
-    return (bool) $this->handle;
   }
 
   /**
@@ -445,7 +469,6 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
    */
   public function dirname($uri = NULL) {
     list($scheme, $target) = explode('://', $uri, 2);
-    $target  = $this->getTarget($uri);
     $dirname = dirname($target);
 
     if ($dirname == '.') {
@@ -465,6 +488,7 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
     if (!isset($uri)) {
       $uri = $this->uri;
     }
+
     return $uri;
   }
 
@@ -501,5 +525,21 @@ class DrupalRemoteStreamWrapper implements DrupalStreamWrapperInterface {
     }
 
     return $return;
+  }
+
+  /**
+   * Fetch the content of the file using drupal_http_request().
+   */
+  protected function getStreamContent() {
+    if (!isset($this->stream_content)) {
+      $this->stream_content = NULL;
+
+      $request = drupal_http_request($this->uri);
+      if (empty($request->error) && !empty($request->data)) {
+        $this->stream_content = $request->data;
+      }
+    }
+
+    return $this->stream_content;
   }
 }

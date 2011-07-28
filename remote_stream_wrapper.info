@@ -5,3 +5,4 @@ files[] = remote_stream_wrapper.inc
 files[] = remote_stream_wrapper.test
 suggests[] = file
 suggests[] = media
+suggests[] = image

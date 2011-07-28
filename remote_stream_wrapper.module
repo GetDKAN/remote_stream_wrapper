@@ -8,6 +8,37 @@
  */
 
 /**
+ * Stream wrapper type flag -- visible and readable using remote files that act like local files.
+ */
+define('STREAM_WRAPPERS_REMOTE', STREAM_WRAPPERS_LOCAL | STREAM_WRAPPERS_READ | STREAM_WRAPPERS_VISIBLE);
+
+/**
+ * Implements hook_menu().
+ */
+function remote_stream_wrapper_menu() {
+  $items = array();
+
+  // Add image style generation paths for external URLs.
+  if (module_exists('image')) {
+    $wrappers = file_get_remote_stream_wrappers();
+    $directory_path = file_stream_wrapper_get_instance_by_scheme(file_default_scheme())->getDirectoryPath();
+    $pos = count(explode('/', $directory_path)) + 1;
+    $item = array(
+      'page callback' => 'remote_stream_wrapper_image_style_deliver',
+      'page arguments' => array($pos, $pos + 1),
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+      'file' => 'remote_stream_wrapper.image.inc',
+    );
+    foreach (array_keys($wrappers) as $scheme) {
+      $items[$directory_path . '/styles/%image_style/' . $scheme] = $item;
+    }
+  }
+
+  return $items;
+}
+
+/**
  * Implements hook_permission().
  */
 function remote_stream_wrapper_permission() {
@@ -31,12 +62,66 @@ function remote_stream_wrapper_stream_wrappers() {
     'name' => t('HTTP URLs'),
     'class' => 'DrupalRemoteStreamWrapper',
     'description' => t('Remote files.'),
-    'type' => STREAM_WRAPPERS_READ_VISIBLE,
+    'type' => STREAM_WRAPPERS_REMOTE,
+    'remote' => TRUE,
   );
   $info['https'] = $info['http'];
+  $info['https']['name'] = t('HTTPS URLs');
   $info['feed'] = $info['http'];
+  $info['feed']['name'] = t('Feed URLs');
 
   return $info;
+}
+
+/**
+ * Return a list of remote stream wrappers.
+ */
+function file_get_remote_stream_wrappers() {
+  $wrappers = file_get_stream_wrappers(STREAM_WRAPPERS_REMOTE);
+  foreach ($wrappers as $scheme => $wrapper) {
+    if (empty($wrapper['remote'])) {
+      unset($wrappers[$scheme]);
+    }
+  }
+  //$wrappers = array_diff_key($wrappers, file_get_stream_wrappers(STREAM_WRAPPERS_LOCAL_NORMAL));
+  return $wrappers;
+}
+
+/**
+ * Check if a stream wrapper scheme is a remote stream wrapper.
+ */
+function file_is_scheme_remote($scheme) {
+  $wrappers = file_get_remote_stream_wrappers();
+  return isset($wrappers[$scheme]);
+}
+
+/**
+ * Implements hook_preprocess_image().
+ */
+function remote_stream_wrapper_preprocess_image(&$variables) {
+  static $regex;
+
+  if (!empty($variables['style_name'])) {
+    if (!isset($regex)) {
+      $wrappers = file_get_remote_stream_wrappers();
+      $schemes = implode('|', array_keys($wrappers));
+      $regex = "#^($schemes)://styles/#";
+    }
+    $variables['path'] = preg_replace($regex, file_default_scheme() . '://styles/', $variables['path'], 1);
+  }
+}
+
+/**
+ * Copy of image_style_path() for use with remote images.
+ *
+ * When image_style_path() is give a file like 'http://example.com/image.png'
+ * it is converted into 'http://styles/stylename/http/example.com/image.png'
+ * which will fail image_style_deliver().
+ */
+function remote_stream_wrapper_image_style_path($style_name, $uri) {
+  // Force the image style to be returned with the default file scheme, but
+  // with the file's original scheme in the path.
+  return file_default_scheme() . '://styles/' . $style_name . '/' . file_uri_scheme($uri) . '/' . file_uri_target($uri);
 }
 
 /**
@@ -46,19 +131,9 @@ function remote_stream_wrapper_stream_wrappers() {
  * it is read-only.
  */
 function remote_stream_wrapper_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
-  /*if ($form['#field']['type'] == 'file') {
-    $form['field']['settings']['uri_scheme']['#options']['remote'] = t('Remote files');
-    $form['instance']['settings']['file_directory']['#states'] = array(
-      'invisible' => array(
-        ':input[name="field[settings][uri_scheme]"]' => array('value' => 'remote'),
-      ),
-    );
-    $form['instance']['settings']['max_filesize']['#states'] = array(
-      'invisible' => array(
-        ':input[name="field[settings][uri_scheme]"]' => array('value' => 'remote'),
-      ),
-    );
-  }*/
+  if ($form['#field']['type'] == 'file' || $form['#field']['type'] == 'image') {
+    $form['field']['settings']['uri_scheme']['#description'] .= ' ' . t('This only applies to uploaded files and not remote files.');
+  }
 }
 
 /**
@@ -139,13 +214,12 @@ function remote_stream_wrapper_media_browser_plugin_view($plugin_name, $params) 
   $path = drupal_get_path('module', 'media');
 
   $types = isset($params['types']) ? $params['types'] : array();
-  $multiselect = isset($params['multiselect']) ? $params['multiselect'] : FALSE;
 
   $redirect = array('media/browser', array('query' => array('render' => 'media-popup')));
   switch ($plugin_name) {
     case 'remote_file':
       // @todo: implement the multiselect argument here.
-      $from_web_form = drupal_get_form('remote_stream_wrapper_media_browser_form', $types, $multiselect);
+      $from_web_form = drupal_get_form('remote_stream_wrapper_media_browser_form', $types);
       return array(
         '#title' => t('Remote URL'),
         'form' => array($from_web_form),
@@ -161,7 +235,7 @@ function remote_stream_wrapper_media_browser_plugin_view($plugin_name, $params) 
  *
  * @see remote_stream_wrapper_media_browser_form_submit()
  */
-function remote_stream_wrapper_media_browser_form($form, &$form_state = array(), $types = NULL) {
+function remote_stream_wrapper_media_browser_form($form, &$form_state = array(), $types = array()) {
   $form['url'] = array(
     '#type' => 'textfield',
     '#title' => 'URL',
@@ -172,6 +246,7 @@ function remote_stream_wrapper_media_browser_form($form, &$form_state = array(),
     '#maxlength' => 2083,
     '#element_validate' => array('remote_stream_wrapper_validate_url'),
     '#required' => TRUE,
+    '#file_types' => $types,
   );
 
   // @todo Validate against file field allowed types.
