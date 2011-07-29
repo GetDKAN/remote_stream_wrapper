@@ -240,10 +240,7 @@ function remote_stream_wrapper_media_browser_form($form, &$form_state = array(),
     '#type' => 'textfield',
     '#title' => 'URL',
     '#attributes' => array('class' => array('media-add-from-remote-url')),
-    // There is no standard specifying a maximum length for a URL. Internet
-    // Explorer supports upto 2083 (http://support.microsoft.com/kb/208427), so
-    // we assume publicly available media URLs are within this limit.
-    '#maxlength' => 2083,
+    '#maxlength' => 255, // Maximum length of {file_managed}.uri
     '#element_validate' => array('remote_stream_wrapper_validate_url'),
     '#required' => TRUE,
     '#file_types' => $types,
