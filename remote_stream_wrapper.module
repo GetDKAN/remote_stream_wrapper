@@ -146,7 +146,7 @@ function remote_stream_wrapper_validate_url($element, &$form_state) {
   }
   elseif (!file_stream_wrapper_valid_scheme(file_uri_scheme($value))) {
     // Check that the scheme is supported.
-    form_error($element, t('Remote URLs with the %scheme scheme are not supported.', array('%scheme' => $scheme)));
+    form_error($element, t('Remote URLs with the %scheme scheme are not supported.', array('%scheme' => file_uri_scheme($value))));
   }
   else {
     // Check that the file exists.
