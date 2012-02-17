@@ -250,7 +250,6 @@ function remote_stream_wrapper_file_add_form($form, &$form_state, array $options
     '#maxlength' => 255, // Maximum length of {file_managed}.uri
     '#element_validate' => array('remote_stream_wrapper_validate_url'),
     '#required' => TRUE,
-    '#file_types' => $types,
   );
 
   // @todo Validate against file field allowed types.
