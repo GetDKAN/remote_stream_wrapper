@@ -85,13 +85,16 @@ function remote_stream_wrapper_stream_wrappers() {
  * Return a list of remote stream wrappers.
  */
 function file_get_remote_stream_wrappers() {
-  $wrappers = file_get_stream_wrappers(STREAM_WRAPPERS_REMOTE);
-  foreach ($wrappers as $scheme => $wrapper) {
-    if (empty($wrapper['remote'])) {
-      unset($wrappers[$scheme]);
+  $wrappers = &drupal_static(__FUNCTION__);
+  if (!isset($wrappers)) {
+    $wrappers = file_get_stream_wrappers(STREAM_WRAPPERS_REMOTE);
+    foreach ($wrappers as $scheme => $wrapper) {
+      if (empty($wrapper['remote'])) {
+        unset($wrappers[$scheme]);
+      }
     }
+    //$wrappers = array_diff_key($wrappers, file_get_stream_wrappers(STREAM_WRAPPERS_LOCAL_NORMAL
   }
-  //$wrappers = array_diff_key($wrappers, file_get_stream_wrappers(STREAM_WRAPPERS_LOCAL_NORMAL));
   return $wrappers;
 }
 
