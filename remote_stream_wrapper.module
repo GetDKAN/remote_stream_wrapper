@@ -113,6 +113,10 @@ function remote_stream_wrapper_file_url_alter(&$uri) {
   $scheme = file_uri_scheme($uri);
   if ($scheme && file_is_scheme_remote($scheme) && strpos($uri, "$scheme://styles/") === 0) {
     $uri = file_default_scheme() . '://' . file_uri_target($uri);
+    if (!variable_get('clean_url') && file_uri_scheme($uri) == 'public' && !file_exists($uri)) {
+      $directory_path = file_stream_wrapper_get_instance_by_uri($uri)->getDirectoryPath();
+      $uri = url($directory_path . '/' . file_uri_target($uri), array('absolute' => TRUE));
+    }
   }
 }
 
