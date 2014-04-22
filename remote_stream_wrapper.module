@@ -108,8 +108,7 @@ function file_is_scheme_remote($scheme) {
  */
 function remote_stream_wrapper_file_url_alter(&$uri) {
   $scheme = file_uri_scheme($uri);
-  $wrappers = file_get_remote_stream_wrappers();
-  if ($scheme && isset($wrappers[$scheme]) && strpos($uri, "$scheme://styles/") === 0) {
+  if ($scheme && file_is_scheme_remote($scheme) && strpos($uri, "$scheme://styles/") === 0) {
     $uri = file_default_scheme() . '://' . file_uri_target($uri);
   }
 }
@@ -143,7 +142,7 @@ function remote_stream_wrapper_form_field_ui_field_edit_form_alter(&$form, &$for
  * Validation callback for remote URLs.
  */
 function remote_stream_wrapper_validate_url($element, &$form_state) {
-  $value = $element['#value'];
+  $value = trim($element['#value']);
   if ($value != '' && !valid_url($value, TRUE)) {
     form_error($element, t('Invalid URL %url.', array('%url' => $value)));
   }
@@ -267,7 +266,7 @@ function remote_stream_wrapper_file_add_form($form, &$form_state, array $options
  * @see DrupalRemoteStreamWrapper
  */
 function remote_stream_wrapper_file_add_form_submit($form, &$form_state) {
-  $uri = $url = $form_state['values']['url'];
+  $uri = $url = trim($form_state['values']['url']);
 
   try {
     $file = remote_stream_wrapper_file_load_by_uri($uri);
