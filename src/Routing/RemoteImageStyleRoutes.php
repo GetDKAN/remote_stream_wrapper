@@ -6,7 +6,6 @@ use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Routing\Route;
-use Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface;
 
 /**
  * Defines a route subscriber to register a url for serving image styles.
@@ -56,21 +55,24 @@ class RemoteImageStyleRoutes implements ContainerInjectionInterface {
 
     $public_directory_path = $this->streamWrapperManager->getViaScheme('public')->getDirectoryPath();
 
-    $remote_schemes = array_keys($this->streamWrapperManager->getWrappers(RemoteStreamWrapperInterface::REMOTE_NORMAL));
+    // Find all remote stream wrappers.
+    $wrappers = $this->streamWrapperManager->getWrappers();
 
-    foreach ($remote_schemes as $scheme) {
-      // Manually specify the scheme so that the route is preferred over the
-      // image.style_public route.
-      $routes['image.style_' . $scheme] = new Route(
-        '/' . $public_directory_path . '/styles/{image_style}/' . $scheme,
-        array(
-          '_controller' => 'Drupal\remote_stream_wrapper\Controller\RemoteImageStyleDownloadController::deliver',
-          'scheme' => $scheme,
-        ),
-        array(
-          '_access' => 'TRUE',
-        )
-      );
+    foreach ($wrappers as $scheme => $wrapper) {
+      if (file_is_wrapper_remote($wrapper['class'])) {
+        // Manually specify the scheme so that the route is preferred over the
+        // image.style_public route.
+        $routes['image.style_' . $scheme] = new Route(
+          '/' . $public_directory_path . '/styles/{image_style}/' . $scheme,
+          array(
+            '_controller' => 'Drupal\remote_stream_wrapper\Controller\RemoteImageStyleDownloadController::deliver',
+            'scheme' => $scheme,
+          ),
+          array(
+            '_access' => 'TRUE',
+          )
+        );
+      }
     }
 
     return $routes;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\Tests\remote_stream_wrapper;
+namespace Drupal\Tests\remote_stream_wrapper\Unit;
 
 use Drupal\Core\StreamWrapper\StreamWrapperInterface;
 use Drupal\remote_stream_wrapper\StreamWrapper\HttpStreamWrapper;
@@ -20,7 +20,20 @@ class HttpStreamWrapperTest extends UnitTestCase {
    * @covers ::getDescription
    */
   public function testStreamConfiguration() {
-    $this->assertEquals(StreamWrapperInterface::READ & StreamWrapperInterface::HIDDEN, HttpStreamWrapper::getType());
+
+    $type = HttpStreamWrapper::getType();
+    $this->assertEquals(StreamWrapperInterface::READ & StreamWrapperInterface::HIDDEN, $type);
+    $this->assertEquals($type & StreamWrapperInterface::LOCAL, 0);
+    $this->assertNotEquals($type & StreamWrapperInterface::READ, 0);
+    $this->assertEquals($type & StreamWrapperInterface::WRITE, 0);
+    $this->assertEquals($type & StreamWrapperInterface::VISIBLE, 0);
+    $this->assertNotEquals($type & StreamWrapperInterface::HIDDEN, 0);
+    //$this->assertEquals($type & StreamWrapperInterface::LOCAL_HIDDEN, 0);
+    //$this->assertEquals($type & StreamWrapperInterface::WRITE_VISIBLE, 0);
+    $this->assertNotEquals($type & StreamWrapperInterface::READ_VISIBLE, 0);
+    //$this->assertEquals($type & StreamWrapperInterface::NORMAL, 0);
+    //$this->assertEquals($type & StreamWrapperInterface::LOCAL_NORMAL, 0);
+
     $wrapper = new HttpStreamWrapper();
     $this->assertInternalType('string', $wrapper->getName());
     $this->assertInternalType('string', $wrapper->getDescription());

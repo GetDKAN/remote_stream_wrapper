@@ -35,7 +35,7 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
    * {@inheritdoc}
    */
   public static function getType() {
-    return RemoteStreamWrapperInterface::REMOTE_NORMAL;
+    return StreamWrapperInterface::READ & StreamWrapperInterface::HIDDEN;
   }
 
   /**

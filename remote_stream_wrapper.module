@@ -22,7 +22,7 @@ function file_is_uri_remote($uri) {
   }
 }
 
-function file_is_wrapper_remote(StreamWrapperInterface $wrapper) {
+function file_is_wrapper_remote($wrapper) {
   return is_subclass_of($wrapper, '\Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface');
 }
 
