@@ -7,7 +7,7 @@ use Drupal\Core\StreamWrapper\StreamWrapperInterface;
 /**
  * HTTP(s) stream wrapper.
  */
-class HttpStreamWrapper implements StreamWrapperInterface {
+class HttpStreamWrapper implements RemoteStreamWrapperInterface {
   use ReadOnlyPhpStreamWrapperTrait;
 
   /**
@@ -35,7 +35,7 @@ class HttpStreamWrapper implements StreamWrapperInterface {
    * {@inheritdoc}
    */
   public static function getType() {
-    return StreamWrapperInterface::READ & StreamWrapperInterface::HIDDEN;
+    return RemoteStreamWrapperInterface::REMOTE_NORMAL;
   }
 
   /**
