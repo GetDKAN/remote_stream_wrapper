@@ -1,8 +1,7 @@
 <?php
 
-use Drupal\Core\StreamWrapper\StreamWrapperInterface;
-use Drupal\image\Entity\ImageStyle;
 use Drupal\file\Entity\File;
+use Drupal\image\Entity\ImageStyle;
 
 function file_is_scheme_remote($scheme) {
   if ($wrapper = \Drupal::service('stream_wrapper_manager')->getViaScheme($scheme)) {
@@ -23,7 +22,7 @@ function file_is_uri_remote($uri) {
 }
 
 function file_is_wrapper_remote($wrapper) {
-  return is_subclass_of($wrapper, '\Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface');
+  return $wrapper && is_subclass_of($wrapper, '\Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface');
 }
 
 /**

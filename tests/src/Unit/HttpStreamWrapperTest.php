@@ -5,6 +5,7 @@ namespace Drupal\Tests\remote_stream_wrapper\Unit;
 use Drupal\Core\StreamWrapper\StreamWrapperInterface;
 use Drupal\remote_stream_wrapper\StreamWrapper\HttpStreamWrapper;
 use Drupal\Tests\UnitTestCase;
+use GuzzleHttp\Client;
 
 /**
  * @group remote_stream_wrapper
@@ -34,7 +35,7 @@ class HttpStreamWrapperTest extends UnitTestCase {
     //$this->assertEquals($type & StreamWrapperInterface::NORMAL, 0);
     //$this->assertEquals($type & StreamWrapperInterface::LOCAL_NORMAL, 0);
 
-    $wrapper = new HttpStreamWrapper();
+    $wrapper = new HttpStreamWrapper(new Client());
     $this->assertInternalType('string', $wrapper->getName());
     $this->assertInternalType('string', $wrapper->getDescription());
   }
@@ -48,7 +49,7 @@ class HttpStreamWrapperTest extends UnitTestCase {
    * @covers ::realpath
    */
   public function testUri() {
-    $wrapper = new HttpStreamWrapper();
+    $wrapper = new HttpStreamWrapper(new Client());
     $uri = 'http://example.com/file.txt';
     $wrapper->setUri($uri);
     $this->assertEquals($uri, $wrapper->getUri());
@@ -62,7 +63,7 @@ class HttpStreamWrapperTest extends UnitTestCase {
    * @covers ::dirname
    */
   public function testDirname() {
-    $wrapper = new HttpStreamWrapper();
+    $wrapper = new HttpStreamWrapper(new Client());
 
     // Test dirname() with no parameters.
     $wrapper->setUri('http://example.com/test.txt');
@@ -85,11 +86,24 @@ class HttpStreamWrapperTest extends UnitTestCase {
    * @covers ::stream_lock
    */
   public function testStreamLock() {
-    $wrapper = new HttpStreamWrapper();
+    $wrapper = new HttpStreamWrapper(new Client());
     $wrapper->setUri('http://example.com/test.txt');
     foreach ([LOCK_SH, LOCK_EX, LOCK_UN, LOCK_NB] as $type) {
       $this->assertTrue($wrapper->stream_lock($type));
     }
+  }
+
+  /**
+   * Test that the timeout is set properly in configuration.
+   *
+   * @covers ::stream_set_option
+   */
+  public function testStreamSetOption() {
+    $wrapper = new HttpStreamWrapper(new Client());
+    $result = $wrapper->stream_set_option(STREAM_OPTION_READ_TIMEOUT, 30, 50);
+    $this->assertTrue($result);
+    $config = $wrapper->getConfig();
+    $this->assertEquals($config['timeout'], 30.000050);
   }
 
 }

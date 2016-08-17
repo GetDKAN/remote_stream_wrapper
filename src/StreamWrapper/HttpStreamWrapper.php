@@ -3,6 +3,9 @@
 namespace Drupal\remote_stream_wrapper\StreamWrapper;
 
 use Drupal\Core\StreamWrapper\StreamWrapperInterface;
+use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ServerException;
 
 /**
  * HTTP(s) stream wrapper.
@@ -25,11 +28,31 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
   protected $stream;
 
   /**
-   * Optional timeout for HTTP requests.
+   * The HTTP client.
    *
-   * @var int
+   * @var \GuzzleHttp\ClientInterface
    */
-  protected $timeout;
+  protected $client;
+
+  /**
+   * Optional configuration for HTTP requests.
+   *
+   * @var array
+   */
+  protected $config = [];
+
+  /**
+   * Constructs a new HttpStreamWrapper.
+   *
+   * @param \GuzzleHttp\ClientInterface $client
+   *   The HTTP client.
+   * @param array $config
+   *   Optional HTTP client configuration.
+   */
+  public function __construct(ClientInterface $client = NULL, array $config = []) {
+    $this->client = $client ?: \Drupal::httpClient();
+    $this->config = $config;
+  }
 
   /**
    * {@inheritdoc}
@@ -132,10 +155,9 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
       return FALSE;
     }
 
-    $client = $this->httpClient();
     try {
-      $response = $client->get($path);
-      $this->stream = $response->getBody();
+      $this->setUri($path);
+      $this->request();
     }
     catch (\Exception $e) {
       if ($options & STREAM_REPORT_ERRORS) {
@@ -210,7 +232,7 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
       return FALSE;
     }
 
-    $this->timeout = $arg1 + $arg2;
+    $this->config['timeout'] = $arg1 + ($arg2 / 1000000);
     return TRUE;
   }
 
@@ -218,27 +240,44 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
    * {@inheritdoc}
    */
   public function stream_stat() {
-    static $modeMap = [
-      'r'  => 33060,
-      'r+' => 33206,
-      'w'  => 33188,
+    // @see https://github.com/guzzle/psr7/blob/master/src/StreamWrapper.php
+    $stat = [
+      'dev' => 0,               // device number
+      'ino' => 0,               // inode number
+      'mode' => 0100000 | 0444, // inode protection (regular file + read only)
+      'nlink' => 0,             // number of links
+      'uid' => 0,               // userid of owner
+      'gid' => 0,               // groupid of owner
+      'rdev' => 0,              // device type, if inode device *
+      'size' => 0,              // size in bytes
+      'atime' => 0,             // time of last access (Unix timestamp)
+      'mtime' => 0,             // time of last modification (Unix timestamp)
+      'ctime' => 0,             // time of last inode change (Unix timestamp)
+      'blksize' => 0,           // blocksize of filesystem IO
+      'blocks' => 0,            // number of blocks allocated
     ];
 
-    return [
-      'dev'     => 0,
-      'ino'     => 0,
-      'mode'    => $modeMap['r'],
-      'nlink'   => 0,
-      'uid'     => 0,
-      'gid'     => 0,
-      'rdev'    => 0,
-      'size'    => $this->stream->getSize() ?: 0,
-      'atime'   => 0,
-      'mtime'   => 0,
-      'ctime'   => 0,
-      'blksize' => 0,
-      'blocks'  => 0,
-    ];
+    try {
+      $response = $this->requestTryHeadLookingForHeader('Content-Length');
+
+      if ($response->hasHeader('Content-Length')) {
+        $stat['size'] = (int) $response->getHeaderLine('Content-Length');
+      }
+      elseif ($size = $response->getBody()->getSize()) {
+        $stat['size'] = $size;
+      }
+      if ($response->hasHeader('Last-Modified')) {
+        if ($mtime = strtotime($response->getHeaderLine('Last-Modified'))) {
+          $stat['mtime'] = $mtime;
+        }
+      }
+
+      return $stat;
+    }
+    catch (\Exception $exception) {
+      watchdog_exception('remote_stream_wrapper', $exception);
+      return NULL;
+    }
   }
 
   /**
@@ -252,10 +291,7 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
    * {@inheritdoc}
    */
   public function url_stat($path, $flags) {
-    $client = $this->httpClient();
-    $response = $client->get($path);
-    $this->stream = $response->getBody();
-    $this->uri = $path;
+    $this->setUri($path);
     if ($flags & STREAM_URL_STAT_QUIET) {
       return @$this->stream_stat();
     }
@@ -265,24 +301,43 @@ class HttpStreamWrapper implements RemoteStreamWrapperInterface {
   }
 
   /**
-   * Return a HTTP client.
+   * Returns the current HTTP client configuration.
    *
-   * @return \GuzzleHttp\Client
-   *   The HTTP client.
+   * @return array
    */
-  protected function httpClient() {
-    /** @var \Drupal\Core\Http\ClientFactory $factory */
-    $factory = \Drupal::service('http_client_factory');
+  public function getConfig() {
+    return $this->config;
+  }
 
-    $config = [];
-    if ($this->timeout) {
-      $config = [
-        'timeout' => $this->timeout,
-      ];
+  /**
+   * {@inheritdoc}
+   */
+  public function request($method = 'GET') {
+    $response = $this->client->request($method, $this->uri, $this->config);
+    if ($method !== 'HEAD') {
+      $this->stream = $response->getBody();
     }
-    $client = $factory->fromOptions($config);
+    return $response;
+  }
 
-    return $client;
+  /**
+   * {@inheritdoc}
+   */
+  public function requestTryHeadLookingForHeader($header) {
+    try {
+      $response = $this->request('HEAD');
+      if ($response->hasHeader($header)) {
+        return $response;
+      }
+    }
+    catch (ClientException $exception) {
+      // Do nothing, try a GET request instead.
+    }
+    catch (ServerException $exception) {
+      // Do nothing, try a GET request instead.
+    }
+
+    return $this->request('GET');
   }
 
 }
