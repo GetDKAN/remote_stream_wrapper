@@ -1,7 +1,13 @@
 <?php
 
-use Drupal\file\Entity\File;
-use Drupal\image\Entity\ImageStyle;
+/**
+ * Implements hook_entity_type_alter().
+ */
+function remote_stream_wrapper_entity_type_alter(&$entity_types) {
+  if (isset($entity_types['image_style'])) {
+    $entity_types['image_style']->setClass('Drupal\remote_stream_wrapper\Entity\ImageStyle');
+  }
+}
 
 function file_is_scheme_remote($scheme) {
   if ($wrapper = \Drupal::service('stream_wrapper_manager')->getViaScheme($scheme)) {
@@ -23,43 +29,4 @@ function file_is_uri_remote($uri) {
 
 function file_is_wrapper_remote($wrapper) {
   return $wrapper && is_subclass_of($wrapper, '\Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface');
-}
-
-/**
- * Implements hook_file_url_alter().
- */
-function remote_stream_wrapper_file_url_alter(&$uri) {
-  if (strpos($uri, "://styles/") && file_is_uri_remote($uri)) {
-    // Remote image style derivatives are stored in the public file system.
-    $uri = str_replace(file_uri_scheme($uri) . '://', 'public://', $uri);
-  }
-}
-
-/**
- * Implements hook_ENTITY_TYPE_predelete() for file entities.
- */
-function remote_stream_wrapper_file_predelete(File $file) {
-  // Delete any image derivatives of this image.
-  if (file_is_uri_remote($file->getFileUri())) {
-    remote_stream_wrapper_image_path_flush($file->getFileUri());
-  }
-}
-
-/**
- * Clears cached versions of a specific file in all styles.
- *
- * @param $path
- *   The Drupal file path to the original image.
- */
-function remote_stream_wrapper_image_path_flush($path) {
-  /** @var \Drupal\image\ImageStyleInterface[] $styles */
-  $styles = ImageStyle::loadMultiple();
-  foreach ($styles as $style) {
-    $derivative_uri = $style->buildUri($path);
-    // Remote image style derivatives are stored in the public file system.
-    $derivative_uri = str_replace(file_uri_scheme($derivative_uri) . '://', 'public://', $derivative_uri);
-    if (file_exists($derivative_uri)) {
-      file_unmanaged_delete($derivative_uri);
-    }
-  }
 }

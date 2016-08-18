@@ -49,10 +49,7 @@ class HttpMimeTypeGuesser implements MimeTypeGuesserInterface {
    * {@inheritdoc}
    */
   public function guess($path) {
-    /** @var \Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface $wrapper */
-    $wrapper = $this->streamWrapperManager->getViaUri($path);
-
-    if (!$wrapper || !is_subclass_of($wrapper, '\Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface')) {
+    if (!$this->fileIsUriRemote($path)) {
       return NULL;
     }
 
@@ -72,6 +69,8 @@ class HttpMimeTypeGuesser implements MimeTypeGuesserInterface {
     }
 
     try {
+      /** @var \Drupal\remote_stream_wrapper\StreamWrapper\RemoteStreamWrapperInterface $wrapper */
+      $wrapper = $this->streamWrapperManager->getViaUri($path);
       $response = $wrapper->requestTryHeadLookingForHeader('Content-Type');
       if ($response->hasHeader('Content-Type')) {
         return $response->getHeaderLine('Content-Type');
@@ -82,6 +81,21 @@ class HttpMimeTypeGuesser implements MimeTypeGuesserInterface {
     }
 
     return NULL;
+  }
+
+  /**
+   * Provides a wrapper for file_is_uri_remote() to allow unit testing.
+   *
+   * @todo: Convert file_is_uri_remote() into a proper injectable service.
+   *
+   * @param string $uri
+   *   A file URI.
+   *
+   * @return bool
+   *   TRUE if the file is remote, or FALSE otherwise.
+   */
+  public function fileIsUriRemote($uri) {
+    return file_is_uri_remote($uri);
   }
 
 }
